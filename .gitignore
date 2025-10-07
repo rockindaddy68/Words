@@ -5,7 +5,7 @@ node_modules/
 dist/
 build/
 
-# Environment variables
+# Environment variables - WICHTIG: Credentials nicht zu Git hinzufügen!
 .env
 .env.local
 .env.production
