@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🎵 Words
 
 A modern Spotify-inspired lyrics search application built with React, TypeScript & Tailwind CSS.
