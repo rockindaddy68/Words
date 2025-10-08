@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 interface Song {
   title: string;
@@ -12,163 +12,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [currentSong, setCurrentSong] = useState<Song | null>(null)
-  const [searchResults, setSearchResults] = useState<any[]>([])
-  const [showDropdown, setShowDropdown] = useState(false)
 
-  // Schließe Dropdown beim Klicken außerhalb
-  useEffect(() => {
-    const handleClickOutside = () => setShowDropdown(false)
-    document.addEventListener('click', handleClickOutside)
-    return () => document.removeEventListener('click', handleClickOutside)
-  }, [])
-
-  // Spezielle Suche nur für Songs eines Artists
-  const searchArtistSongs = async (artistName: string) => {
-    try {
-      const token = await getSpotifyToken()
-      if (!token) return
-
-      const response = await fetch(
-        `https://api.spotify.com/v1/search?q=artist:"${encodeURIComponent(artistName)}"&type=track&limit=20`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      )
-
-      if (response.ok) {
-        const data = await response.json()
-        const suggestions = []
-        
-        // Füge Artist-Info hinzu
-        suggestions.push({
-          type: 'artist',
-          artist: artistName,
-          title: `🎤 ${artistName} - Artist Info`,
-          image: '',
-          followers: 0
-        })
-        
-        // Nur Songs von diesem exakten Artist
-        if (data.tracks?.items) {
-          data.tracks.items.forEach((track: any) => {
-            // Strenge Filterung: Nur wenn der Artist exakt übereinstimmt
-            if (track.artists[0]?.name.toLowerCase() === artistName.toLowerCase()) {
-              suggestions.push({
-                type: 'track',
-                artist: track.artists[0].name,
-                title: track.name,
-                album: track.album?.name || '',
-                image: track.album?.images[0]?.url || ''
-              })
-            }
-          })
-        }
-        
-        setSearchResults(suggestions)
-        setShowDropdown(suggestions.length > 0)
-      }
-    } catch (error) {
-      console.error('Artist songs search failed:', error)
-    }
-  }
-
-  // Live-Suche für Vorschläge
-  const searchSuggestions = async (query: string) => {
-    if (query.length < 2) {
-      setSearchResults([])
-      setShowDropdown(false)
-      return
-    }
-
-    try {
-      const token = await getSpotifyToken()
-      if (!token) return
-
-      const suggestions = []
-      
-      // 1. Suche nach Artists (exakt)
-      const artistResponse = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=5`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      )
-      
-      if (artistResponse.ok) {
-        const artistData = await artistResponse.json()
-        if (artistData.artists?.items) {
-          for (const artist of artistData.artists.items.slice(0, 3)) {
-            suggestions.push({
-              type: 'artist',
-              artist: artist.name,
-              title: `🎤 Alle ${artist.name} Songs anzeigen`,
-              image: artist.images[0]?.url || '',
-              followers: artist.followers?.total || 0
-            })
-            
-            // 2. Für jeden gefundenen Artist: Hole seine Top-Tracks
-            try {
-              const tracksResponse = await fetch(
-                `https://api.spotify.com/v1/search?q=artist:"${artist.name}"&type=track&limit=10`,
-                { headers: { 'Authorization': `Bearer ${token}` } }
-              )
-              
-              if (tracksResponse.ok) {
-                const tracksData = await tracksResponse.json()
-                if (tracksData.tracks?.items) {
-                  tracksData.tracks.items.slice(0, 8).forEach((track: any) => {
-                    // Nur Tracks von diesem Artist hinzufügen
-                    if (track.artists[0]?.name.toLowerCase() === artist.name.toLowerCase()) {
-                      suggestions.push({
-                        type: 'track',
-                        artist: track.artists[0].name,
-                        title: track.name,
-                        album: track.album?.name || '',
-                        image: track.album?.images[0]?.url || ''
-                      })
-                    }
-                  })
-                }
-              }
-            } catch (e) {
-              console.log('Track search failed for artist:', artist.name)
-            }
-          }
-        }
-      }
-      
-      // 3. Immer auch nach Tracks suchen (für Song-Titel wie "Tiny Dancer")
-      const trackResponse = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=15`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      )
-      
-      if (trackResponse.ok) {
-        const trackData = await trackResponse.json()
-        if (trackData.tracks?.items) {
-          trackData.tracks.items.forEach((track: any) => {
-            // Verhindere Duplikate (falls der Track schon von Artist-Suche hinzugefügt wurde)
-            const isDuplicate = suggestions.some(s => 
-              s.type === 'track' && 
-              s.artist === track.artists[0]?.name && 
-              s.title === track.name
-            )
-            
-            if (!isDuplicate) {
-              suggestions.push({
-                type: 'track',
-                artist: track.artists[0]?.name || '',
-                title: track.name,
-                album: track.album?.name || '',
-                image: track.album?.images[0]?.url || ''
-              })
-            }
-          })
-        }
-      }
-        
-      setSearchResults(suggestions)
-      setShowDropdown(suggestions.length > 0)
-    } catch (error) {
-      console.error('Suggestion search failed:', error)
-    }
-  }
 
   const parseSearchQuery = (query: string) => {
     // Format "Artist - Title" (eindeutig)
@@ -252,7 +96,6 @@ function App() {
 
     setIsLoading(true)
     setCurrentSong(null)
-    setShowDropdown(false)
     
     try {
       // Wenn ein Track ausgewählt wurde, nutze die exakten Daten
@@ -322,46 +165,89 @@ function App() {
         }
       }
 
-      // 2. Lyrics API - Mehrere Quellen versuchen
+      // 2. Lyrics API - Mehrere Quellen und Strategien
       let lyrics = ''
       if (artist && title) {
+        console.log(`📡 Fetching lyrics for: "${artist}" - "${title}"`)
+        
+        // Intelligente Titel-Varianten für maximale Trefferquote
+        const titleVariants = [
+          title, // Original
+          title.replace(/\s*-?\s*(Remastered|Remaster|Live|Acoustic|Remix|Edit|Version|Mix|2009|2010|2011|2012|2013|2014|2015|2016|2017|2018|2019|2020|2021|2022|2023|2024|2025).*$/i, '').trim(),
+          title.replace(/\s*\([^)]*\)/g, '').trim(), // Ohne Klammern
+          title.replace(/\s*\[[^\]]*\]/g, '').trim(), // Ohne eckige Klammern
+          title.split(' - ')[0].trim(), // Nur Teil vor dem Bindestrich
+          title.split(' (')[0].trim(), // Nur Teil vor der Klammer
+        ].filter((t, index, arr) => t && t.length > 2 && arr.indexOf(t) === index) // Unique und mindestens 3 Zeichen
+        
+        const artistVariants = [
+          artist, // Original
+          artist.replace(/^The\s+/i, ''), // "The Rolling Stones" -> "Rolling Stones"
+          `The ${artist}`, // "Rolling Stones" -> "The Rolling Stones"
+          // Spezielle Cases für bekannte Bands
+          ...(artist.toLowerCase().includes('led zeppelin') ? ['Led Zeppelin', 'LedZeppelin'] : []),
+          ...(artist.toLowerCase().includes('pink floyd') ? ['Pink Floyd', 'PinkFloyd'] : []),
+          ...(artist.toLowerCase().includes('deep purple') ? ['Deep Purple', 'DeepPurple'] : []),
+        ]
+        
+        // Mehrere bewährte Lyrics-APIs für maximale Abdeckung
+        const apiSources = [
+          // 1. lyrics.ovh - Sehr zuverlässig, große Datenbank
+          {
+            url: (a: string, t: string) => `https://api.lyrics.ovh/v1/${encodeURIComponent(a)}/${encodeURIComponent(t)}`,
+            parseResponse: (data: any) => data.lyrics?.trim()
+          },
+          // 2. Genius-basierte API - Gute Alternative 
+          {
+            url: (a: string, t: string) => `https://lyrist.vercel.app/api/${encodeURIComponent(t)}/${encodeURIComponent(a)}`,
+            parseResponse: (data: any) => data.lyrics?.trim() || data.song?.trim()
+          },
+          // 3. Lyrics.com ähnliche API
+          {
+            url: (a: string, t: string) => `https://api.textyl.co/api/lyrics?q=${encodeURIComponent(a + ' ' + t)}`,
+            parseResponse: (data: any) => data.lyrics?.trim()
+          },
+        ]
+        
         try {
-          console.log(`📡 Fetching lyrics for: "${artist}" - "${title}"`)
-          
-          // Erste Quelle: lyrics.ovh
-          let lyricsResponse = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`)
-          
-          if (lyricsResponse.ok) {
-            const lyricsData = await lyricsResponse.json()
-            if (lyricsData.lyrics && lyricsData.lyrics.trim()) {
-              lyrics = lyricsData.lyrics.trim()
-              console.log('✅ Lyrics found from lyrics.ovh')
-            }
-          }
-          
-          // Falls keine Lyrics gefunden: Versuche alternative Titel-Varianten
-          if (!lyrics) {
-            // Entferne Klammern und Zusätze wie "(Remastered)", "- Remastered", etc.
-            const cleanTitle = title.replace(/\s*-?\s*(Remastered|Remaster|2009|2010|2011|2012|2013|2014|2015|2016|2017|2018|2019|2020|2021|2022|2023|2024|2025).*$/i, '')
-                                   .replace(/\s*\([^)]*\)/g, '')
-                                   .trim()
-            
-            if (cleanTitle !== title) {
-              console.log(`🔄 Trying clean title: "${cleanTitle}"`)
-              const cleanResponse = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(cleanTitle)}`)
-              
-              if (cleanResponse.ok) {
-                const cleanData = await cleanResponse.json()
-                if (cleanData.lyrics && cleanData.lyrics.trim()) {
-                  lyrics = cleanData.lyrics.trim()
-                  console.log('✅ Lyrics found with clean title')
+          // Teste alle Kombinationen systematisch für maximale Erfolgsquote
+          searchLoop: for (const apiSource of apiSources) {
+            for (const artistVar of artistVariants) {
+              for (const titleVar of titleVariants) {
+                // Skip Duplikate
+                if (!titleVar || !artistVar) continue
+                
+                try {
+                  console.log(`🔄 Trying API with: "${artistVar}" - "${titleVar}"`)
+                  const response = await fetch(apiSource.url(artistVar, titleVar))
+                  
+                  if (response.ok) {
+                    const data = await response.json()
+                    const foundLyrics = apiSource.parseResponse(data)
+                    
+                    // Validierung: Mindestlänge und sinnvoller Inhalt
+                    if (foundLyrics && 
+                        foundLyrics.length > 30 && 
+                        !foundLyrics.toLowerCase().includes('not found') &&
+                        !foundLyrics.toLowerCase().includes('error') &&
+                        foundLyrics.split('\n').length > 3) { // Mehr als 3 Zeilen
+                      
+                      lyrics = foundLyrics
+                      console.log(`✅ Lyrics found via API: "${artistVar}" - "${titleVar}"`)
+                      break searchLoop
+                    }
+                  }
+                } catch (apiError) {
+                  console.log(`❌ API error for "${artistVar}" - "${titleVar}":`, apiError)
                 }
+                
+                // Rate limiting - kleine Pause zwischen Requests
+                await new Promise(resolve => setTimeout(resolve, 150))
               }
             }
           }
-          
         } catch (e) {
-          console.log('❌ Lyrics fetch failed:', e)
+          console.log('❌ General lyrics fetch failed:', e)
         }
       }
 
@@ -406,73 +292,17 @@ Mögliche Gründe:
             </p>
           </div>
 
-          {/* Search Section with Live Suggestions */}
+          {/* Search Section - Einfach und direkt */}
           <div className="max-w-2xl mx-auto mt-12 animate-slide-up">
             <div className="relative">
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value)
-                  searchSuggestions(e.target.value)
-                }}
-                placeholder="Type song title, artist name, or 'Queen' to see all Queen songs..."
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search for any song or artist... (e.g., 'Led Zeppelin Thank You')"
                 className="w-full px-6 py-4 bg-spotify-card border border-spotify-hover rounded-full text-white placeholder-gray-400 focus:outline-none focus:border-accent-500 focus:ring-4 focus:ring-accent-500/20 transition-all duration-300 text-lg"
                 onKeyPress={(e) => e.key === 'Enter' && searchLyrics()}
-                onFocus={() => searchSuggestions(searchQuery)}
               />
-              
-              {/* Live Dropdown Suggestions */}
-              {showDropdown && searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-spotify-card border border-spotify-hover rounded-2xl shadow-2xl z-50 max-h-96 overflow-y-auto">
-                  <div className="p-4 border-b border-spotify-hover">
-                    <div className="text-sm text-accent-300 font-medium">Found {searchResults.length} results for "{searchQuery}"</div>
-                  </div>
-                  {searchResults.map((result, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-4 p-4 hover:bg-spotify-hover cursor-pointer border-b border-spotify-hover/50 transition-colors"
-                      onClick={() => {
-                        if (result.type === 'track') {
-                          setSearchQuery(`${result.artist} ${result.title}`)
-                          setShowDropdown(false)
-                          // Auto-search the selected track with exact data
-                          setTimeout(() => searchLyrics({ artist: result.artist, title: result.title }), 100)
-                        } else if (result.type === 'artist') {
-                          setSearchQuery(result.artist)
-                          // Zeige nur Songs von diesem Artist
-                          setTimeout(() => searchArtistSongs(result.artist), 100)
-                        }
-                      }}
-                    >
-                      {result.image && (
-                        <img 
-                          src={result.image} 
-                          alt={result.type === 'track' ? result.title : result.artist}
-                          className="w-12 h-12 rounded-lg object-cover"
-                        />
-                      )}
-                      <div className="flex-1">
-                        {result.type === 'track' ? (
-                          <>
-                            <div className="text-white font-medium">{result.title}</div>
-                            <div className="text-gray-400 text-sm">by {result.artist}</div>
-                            {result.album && <div className="text-gray-500 text-xs">{result.album}</div>}
-                          </>
-                        ) : (
-                          <>
-                            <div className="text-white font-medium">{result.artist}</div>
-                            <div className="text-gray-400 text-sm">Artist • {result.followers?.toLocaleString()} followers</div>
-                          </>
-                        )}
-                      </div>
-                      <div className="text-accent-500">
-                        {result.type === 'track' ? '🎵' : '🎤'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
               
               <button
                 onClick={() => searchLyrics()}
