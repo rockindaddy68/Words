@@ -219,7 +219,16 @@ function App() {
                 
                 try {
                   console.log(`🔄 Trying API with: "${artistVar}" - "${titleVar}"`)
-                  const response = await fetch(apiSource.url(artistVar, titleVar))
+                  
+                  // 5 Sekunden Timeout für schnellere Performance
+                  const controller = new AbortController()
+                  const timeoutId = setTimeout(() => controller.abort(), 5000)
+                  
+                  const response = await fetch(apiSource.url(artistVar, titleVar), {
+                    signal: controller.signal
+                  })
+                  
+                  clearTimeout(timeoutId)
                   
                   if (response.ok) {
                     const data = await response.json()
